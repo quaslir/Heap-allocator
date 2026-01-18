@@ -14,7 +14,7 @@ block_t * find_free_block(size_t size) {
     size_t k = 0;
     bool first = true;
     while(current) {
-        printf("Status %d, Requested size : %zu, Available size: %zu\n", current->free, size, current->size - current->used);
+        //printf("Status %d, Requested size : %zu, Available size: %zu\n", current->free, size, current->size - current->used);
         if(current->free && current->size >= size) {
             if((current->size / size < k) || first) {
                 if(first) first = false;
@@ -38,7 +38,10 @@ block_t * find_last_block() {
 
 void split_block(block_t * block, size_t size) {
     block_t * new_block = (block_t *) ((char *) (block + 1) + size);
-
+    size_t required_size = size + sizeof(block_t) + 8;
+    if(block->size < required_size) {
+        return;
+    }
     new_block->free = 1;
     new_block->size = block->size - size - sizeof(block_t);
     new_block->used = 0;
@@ -50,14 +53,14 @@ void split_block(block_t * block, size_t size) {
         new_block->next->prev = new_block;
     }
     block->next = new_block;
-    puts("Block was successfully splitted");
+    //puts("Block was successfully splitted");
 }
 
 block_t * new_block(size_t size) {
     if(size == 0) return NULL;
     size_t block_size = ((size + 4095) / 4096) * 4096 * 10;
     block_size = (block_size + 7) & ~7;
-    printf("Requesting new block from memory ...\n");
+    //printf("Requesting new block from memory ...\n");
     block_t * block = NULL;
          block = mmap(NULL, block_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -103,7 +106,7 @@ void combine_blocks(block_t * block1, block_t * block2) {
     }
     block1->free = 1;
     block1->used = 0;
-    puts("Successfully combined two blocks into one");
+    //puts("Successfully combined two blocks into one");
 }
 
 void request_free_impl(void ** ptr_ref) {
@@ -116,13 +119,13 @@ void request_free_impl(void ** ptr_ref) {
     block->used = 0;
     block_t * current = NULL;
     if(block->next && block->next->free) {
-        puts("Combining two blocks...");
+        //puts("Combining two blocks...");
         combine_blocks(block, block->next);
     }
     
     
     if(block->prev && block->prev->free) {
-        puts("Combining two blocks...");
+        //puts("Combining two blocks...");
         combine_blocks(block->prev, block);
         current = block->prev;
     } else current = block;
@@ -137,7 +140,7 @@ void request_free_impl(void ** ptr_ref) {
         next->prev = current->prev;
     }
     
-    printf("Unmapping block of size %zu\n", current->size + sizeof(block_t));
+    //printf("Unmapping block of size %zu\n", current->size + sizeof(block_t));
     munmap(current, current->size + sizeof(block_t));
    }
     
