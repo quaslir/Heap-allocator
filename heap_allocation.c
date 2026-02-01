@@ -4,7 +4,11 @@
 #include <sys/mman.h>
 #include <string.h>
 #include "heap_allocation.h"
-
+#define RESET       "\033[0m"
+#define RED         "\033[0;031m"
+#define ALIGNMENT 8
+#include "functions.h"
+#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1))
 block_t * head = NULL;
 
 block_t * find_free_block(size_t size) {
@@ -14,7 +18,7 @@ block_t * find_free_block(size_t size) {
     size_t k = 0;
     bool first = true;
     while(current) {
-        //printf("Status %d, Requested size : %zu, Available size: %zu\n", current->free, size, current->size - current->used);
+        //printf(RED"Status %d, Requested size : %zu, Available size: %zu\n"RESET, current->free, size, current->size - current->used);
         if(current->free && current->size >= size) {
             if((current->size / size < k) || first) {
                 if(first) first = false;
@@ -37,30 +41,37 @@ block_t * find_last_block() {
 }
 
 void split_block(block_t * block, size_t size) {
-    block_t * new_block = (block_t *) ((char *) (block + 1) + size);
-    size_t required_size = size + sizeof(block_t) + 8;
-    if(block->size < required_size) {
+    size_t aligned_size = ALIGN(size);
+    size_t head_size = ALIGN(sizeof(block_t));
+    size_t total_block_step = ALIGN(sizeof(block_t) + aligned_size);
+
+
+     if(block->size < total_block_step +head_size + 8) {
         return;
     }
+
+
+    block_t * new_block = (block_t *) ((char *) block + total_block_step);
+   
     new_block->free = 1;
-    new_block->size = block->size - size - sizeof(block_t);
+    new_block->size = block->size - total_block_step;
     new_block->used = 0;
 
-    block->size = size;
+    block->size = aligned_size;
     new_block->next = block->next;
     new_block->prev = block;
     if(new_block->next) {
         new_block->next->prev = new_block;
     }
     block->next = new_block;
-    //puts("Block was successfully splitted");
+    //puts(RED"Block was successfully splitted"RESET);
 }
 
 block_t * new_block(size_t size) {
     if(size == 0) return NULL;
     size_t block_size = ((size + 4095) / 4096) * 4096 * 10;
     block_size = (block_size + 7) & ~7;
-    //printf("Requesting new block from memory ...\n");
+    //printf(RED"Requesting new block from memory ...\n"RESET);
     block_t * block = NULL;
          block = mmap(NULL, block_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -83,6 +94,7 @@ block_t * new_block(size_t size) {
 }
 
 void * request_memory(size_t size) {
+   size =  ALIGN(size);
     if(size == 0) {
         return NULL;
     }
@@ -106,12 +118,12 @@ void combine_blocks(block_t * block1, block_t * block2) {
     }
     block1->free = 1;
     block1->used = 0;
-    //puts("Successfully combined two blocks into one");
+    //puts(RED"Successfully combined two blocks into one"RESET);
 }
 
 void request_free_impl(void ** ptr_ref) {
     void *ptr = *ptr_ref;
-    if(!ptr) return;
+    if(((!ptr) || ((uintptr_t) ptr % 8) != 0)) return;
 
     block_t * block = (block_t *) ptr - 1;
     if(block->free == 1) return;
@@ -119,19 +131,19 @@ void request_free_impl(void ** ptr_ref) {
     block->used = 0;
     block_t * current = NULL;
     if(block->next && block->next->free) {
-        //puts("Combining two blocks...");
+        //puts(RED"Combining two blocks..."RESET);
         combine_blocks(block, block->next);
     }
     
     
     if(block->prev && block->prev->free) {
-        //puts("Combining two blocks...");
+        //puts(RED"Combining two blocks..."RESET);
         combine_blocks(block->prev, block);
         current = block->prev;
     } else current = block;
 
 
-   if(current->free && current->size > 100000) {
+   if(current->free && current->size > 30000) {
     *ptr_ref = NULL;
     block_t * next = current->next;
     if(current->prev) current->prev->next = next;
@@ -140,7 +152,7 @@ void request_free_impl(void ** ptr_ref) {
         next->prev = current->prev;
     }
     
-    //printf("Unmapping block of size %zu\n", current->size + sizeof(block_t));
+    //printf(RED"Unmapping block of size %zu\n"RESET, current->size + sizeof(block_t));
     munmap(current, current->size + sizeof(block_t));
    }
     
@@ -149,13 +161,16 @@ void request_free_impl(void ** ptr_ref) {
 void print_blocks(void) {
    
     block_t * current = head; 
-    printf("%p\n", head);  
      if(!current) {
         fprintf(stderr, "No blocks allocated\n");
         return;
     }
     while(current) {
-        printf("Address: %p, Used %zu/%zu, Free:%s\n", current, current->used, current->size, current->free ? "true" : "false");
+       // char * addr = address_to_string(current);
+
+       char buf[1024];
+        snprintf(buf, sizeof buf, "Address: %p, Used %zu/%zu, Free:%s\n", current, current->used, current->size, current->free ? "true" : "false");
+        echo_gui(buf);
         current = current->next;
     }
 
@@ -173,14 +188,14 @@ void * request_realloc(void * ptr, size_t size) {
 
     if(block->size >= size) {
         block->used = size;
-        fprintf(stdout, "Block was not changed, memory is enough in this block, exitting ...\n");
+        //fprintf(stdout, RED"Block was not changed, memory is enough in this block, exitting ...\n"RESET);
         return ptr;
     }
 
     void * new_ptr = request_memory(size);
 
     if(!new_ptr) {
-        fprintf(stderr, "Memory allocation failed\n");
+        //fprintf(stderr, "Memory allocation failed\n");
         return NULL;
     }
     memmove(new_ptr, ptr, block->used);
